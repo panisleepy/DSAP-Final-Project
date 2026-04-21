@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-blue: #a7c7ff;
+  --brand-pink: #ffd6e7;
+  --brand-text: #1f1f1f;
+  --background: #f8fafc;
+  --foreground: var(--brand-text);
+}
+
+body {
+  @apply min-h-screen bg-gradient-to-br from-brandPink/40 via-white to-brandBlue/40 text-brandText antialiased;
+  font-feature-settings: "ss01" on, "ss02" on;
+}
+
+.murmur-card {
+  @apply rounded-2xl shadow-sm bg-murmur-card border border-white/60 backdrop-blur-xl;
+}
+
+.murmur-button {
+  @apply inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-brandBlue to-brandPink text-brandText font-medium shadow transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brandBlue/60;
+}

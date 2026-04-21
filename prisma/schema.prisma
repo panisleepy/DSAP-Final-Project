@@ -1,0 +1,180 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  name           String?
+  email          String?   @unique
+  emailVerified  DateTime?
+  image          String?
+  coverImage     String?
+  alias          String    @unique
+  bio            String?
+  website        String?
+  location       String?
+  birthday       DateTime?
+  userIdSet      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  posts          Post[]
+  comments       Comment[]
+  likes          Like[]
+  reposts        Repost[]
+  drafts         Draft[]
+  followers      Follow[]  @relation("Following")
+  following      Follow[]  @relation("Follower")
+  notifications  Notification[]
+  triggeredNotifications Notification[] @relation("NotificationActor")
+  accounts       Account[]
+  sessions       Session[]
+}
+
+model Post {
+  id              String     @id @default(auto()) @map("_id") @db.ObjectId
+  content         String
+  imageUrl        String?
+  authorId        String     @db.ObjectId
+  author          User       @relation(fields: [authorId], references: [id])
+  parentPostId    String?    @db.ObjectId
+  parentPost      Post?      @relation("ParentPost", fields: [parentPostId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  childPosts      Post[]     @relation("ParentPost")
+  rootPostId      String?    @db.ObjectId
+  rootPost        Post?      @relation("RootPost", fields: [rootPostId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  threadPosts     Post[]     @relation("RootPost")
+  comments        Comment[]  @relation("PostComments")
+  rootComments    Comment[]  @relation("RootCommentPost")
+  likes           Like[]
+  reposts         Repost[]   @relation("PostReposts")
+  originalReposts Repost[]   @relation("OriginalPost")
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+}
+
+model Comment {
+  id              String     @id @default(auto()) @map("_id") @db.ObjectId
+  content         String
+  authorId        String     @db.ObjectId
+  author          User       @relation(fields: [authorId], references: [id])
+  postId          String     @db.ObjectId
+  post            Post       @relation("PostComments", fields: [postId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parentCommentId String?    @db.ObjectId
+  parentComment   Comment?   @relation("CommentThread", fields: [parentCommentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies         Comment[]  @relation("CommentThread")
+  rootPostId      String     @db.ObjectId
+  rootPost        Post       @relation("RootCommentPost", fields: [rootPostId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+}
+
+model Like {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  postId    String   @db.ObjectId
+  post      Post     @relation(fields: [postId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+}
+
+model Repost {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
+  user           User     @relation(fields: [userId], references: [id])
+  postId         String   @db.ObjectId
+  post           Post     @relation("PostReposts", fields: [postId], references: [id])
+  originalPostId String?  @db.ObjectId
+  originalPost   Post?    @relation("OriginalPost", fields: [originalPostId], references: [id])
+  createdAt      DateTime @default(now())
+
+  @@unique([postId, userId])
+}
+
+model Follow {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  followerId   String   @db.ObjectId
+  followingId  String   @db.ObjectId
+  follower     User     @relation("Follower", fields: [followerId], references: [id])
+  following    User     @relation("Following", fields: [followingId], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+model Draft {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
+  user           User     @relation(fields: [userId], references: [id])
+  actorId        String?  @db.ObjectId
+  actor          User?    @relation("NotificationActor", fields: [actorId], references: [id])
+  postId         String?  @db.ObjectId
+  commentId      String?  @db.ObjectId
+  type           String
+  commentPreview String?
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId, readAt])
+}
+
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  oauth_token_secret String?
+  oauth_token        String?
+  user              User    @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model VerificationToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
