@@ -89,3 +89,53 @@
 
 ### 與課程的關聯總結
 
+---
+
+## Git Commit 訊息規則（建議長期使用）
+
+### 格式
+
+`<type>(<scope>): <subject>`
+
+- `type`：變更種類（必填）
+- `scope`：影響範圍（選填，例如 `api`、`post`、`comment`、`auth`、`ui`、`infra`）
+- `subject`：一句話描述，使用現在式、英文小寫開頭、不要句號
+
+範例：
+
+- `feat(api): add write rate limiting for posts and comments`
+- `fix(comment): handle 429 response with user toast`
+- `refactor(post): simplify timeline payload mapping`
+
+### Type 對照表
+
+- `feat`：新功能（對使用者可見）
+- `fix`：修 bug（錯誤修正、行為修正）
+- `refactor`：重構（不改功能行為）
+- `perf`：效能優化
+- `style`：格式調整（不影響邏輯，例如 lint/format）
+- `docs`：文件調整（README、註解、說明）
+- `test`：測試新增/修改
+- `chore`：雜務（依賴更新、工具設定、CI）
+
+### Subject 寫法準則
+
+- 建議 50 字元內，聚焦「為什麼要改」而不是列出所有細節
+- 一個 commit 只做一件事，避免混入無關變更
+- 避免使用 `update`、`misc changes` 這類模糊詞
+
+### Body（可選）
+
+當修改較大時，可加上 commit body（空一行後開始）：
+
+- 背景問題（為什麼）
+- 主要改動（做了什麼）
+- 風險與驗證方式（怎麼確認）
+
+### 建議搭配的 Git 工作流
+
+1. 開發前先 `git status` 確認工作區乾淨
+2. 完成一個小目標就 commit 一次
+3. commit 前先跑 `npm run lint`
+4. push 前再檢查一次：`git log --oneline -n 5`
+
