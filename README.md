@@ -73,11 +73,39 @@
 
 ### 目前進度
 
+- **核心功能已可操作**：完成 Google OAuth 登入、首頁動態時報、發文、留言、按讚、轉發、通知與個人頁。
+- **資料模型已落地**：貼文採 `rootPostId` / `parentPostId`，留言採 `parentCommentId` / `rootPostId`，可支援 thread 與巢狀回覆。
+- **遞迴留言流程已可 demo**：從貼文頁點進某則留言後，能 route 到該留言頁，並可繼續往下一層留言鑽取。
+- **留言串顯示邏輯已修正**：貼文頁留言改為「樹狀展平順序（DFS preorder）」，順序由原本可能的 `A, B, A-1`，修正為 `A, A-1, B`，更接近 Twitter 的閱讀感受。
+- **即時互動基礎完成**：透過 Pusher 觸發 `comment:created` 等事件，前端可自動 revalidate 更新畫面。
+- **部署與展示完成**：已上線 Vercel，可提供助教/同學直接驗證 Prototype。
+
+#### Prototype Screenshots
+
+![Prototype screenshot 1](./docs/images/prototype-1.png)
+![Prototype screenshot 2](./docs/images/prototype-2.png)
+![Prototype screenshot 3](./docs/images/prototype-3.png)
+
 ### 遇到的困難
+
+- **遞迴留言排序曾與使用者心智模型不一致（已部分修復）**：原本 API 以時間扁平排序，會讓子留言跳到其他第一層留言後面；目前改為先建 parent-children 關係，再做 DFS 展平，讓回覆緊跟在其父留言下方。
+- **路由語意與返回行為複雜**：`/post/[id]` 與 `/post/[id]/comment/[commentId]` 交錯切換時，`back()` 依賴瀏覽歷史，若從外部連結直接進入深層留言，返回路徑可能不符合預期。
+- **互動數據同步成本高**：留言新增、刪除、讚數與 repost 數需要跨多個 SWR key/頁面同步（貼文頁、留言頁、通知），容易出現短暫不一致。
+- **效能與查詢策略仍在調整**：當留言層數與數量增加時，若每層都即時查 parent/replies，API 次數與 payload 會上升，需要更精確的查詢與快取策略。
+- **邊界情境尚未完全覆蓋**：例如已刪除父留言、深層留言被刪除後的導覽、深連結 404 與錯誤提示文案，仍需補齊。
 
 ### 下一步計畫
 
+- **明確定義遞迴留言體驗（本週優先）**：在「單層 drill-down」與「樹狀展開」間擇一主方案，並補上 breadcrumb / root post 快速返回入口，降低迷航感。
+- **補強路由與狀態同步**：把留言相關頁面的資料更新策略統一（集中 mutate key），並補齊從深連結進入時的 fallback 導覽。
+- **補測試與壓力驗證**：新增留言深度/刪除/跳轉的整合測試，並以測試資料評估不同查詢策略在延遲與 payload 的差異。
 ### 與課程的關聯
+
+- **Tree / DFS（核心）**：留言資料本質是樹結構（`parentCommentId`），本次修正使用 DFS preorder 讓顯示順序符合討論脈絡，也能分析時間/空間複雜度。
+- **Graph（社交網路）**：追蹤關係可視為有向圖（User -> User），首頁 feed 會基於這個圖做節點集合與內容聚合。
+- **Sorting 與 Stable Ordering**：同層留言以時間排序、跨層以樹遍歷順序組合，展示了「單一排序規則不足」時需分層排序與遍歷策略。
+- **Hash-based lookup / Map**：在建構留言樹時使用 `Map<parentId, children[]>` 做 O(1) 期望查找，降低巢狀掃描成本。
+- **Complexity-aware engineering**：在功能設計中持續權衡 UX 與查詢成本（如一次載完整樹 vs 分層載入），把 DSA 從理論轉成系統設計決策。
 
 ---
 

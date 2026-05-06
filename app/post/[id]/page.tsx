@@ -19,6 +19,7 @@ interface CommentSummary {
   id: string;
   content: string;
   createdAt: string;
+  depth?: number;
   parentCommentId: string | null;
   postId: string;
   rootPostId: string;
@@ -264,6 +265,7 @@ export default function PostThreadPage({ params }: { params: Promise<{ id: strin
           commentList.map((comment) => {
             const href =
               session?.user?.id === comment.author.id ? "/profile" : `/u/${comment.author.alias}`;
+            const depth = Math.max(0, Math.min(comment.depth ?? 0, 4));
             return (
               <div
                 key={comment.id}
@@ -277,6 +279,11 @@ export default function PostThreadPage({ params }: { params: Promise<{ id: strin
                   }
                 }}
                 className="rounded-3xl border border-white/70 bg-white/85 p-4 shadow-sm transition hover:bg-white/95 focus:outline-none focus:ring-2 focus:ring-brandBlue/40"
+                style={{
+                  marginLeft: `${depth * 18}px`,
+                  opacity: 1 - depth * 0.06,
+                  transform: depth > 0 ? "scale(0.985)" : "none",
+                }}
               >
                 <div className="flex items-center gap-2 text-xs text-gray-500">
                   <Link

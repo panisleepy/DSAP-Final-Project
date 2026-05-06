@@ -42,6 +42,7 @@ interface CommentSummary {
   id: string;
   content: string;
   createdAt: string;
+  depth?: number;
   parentCommentId?: string | null;
   author: {
     id: string;
@@ -462,9 +463,12 @@ export function PostCard({
                   <div className="text-xs text-gray-400">No replies yet. Be the first to murmur back!</div>
                 ) : (
                   [...commentList]
-                    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
                     .map((comment) => (
-                      <div key={comment.id} className="rounded-2xl bg-white/80 p-3 text-sm text-brandText">
+                      <div
+                        key={comment.id}
+                        className="rounded-2xl bg-white/80 p-3 text-sm text-brandText"
+                        style={{ marginLeft: `${Math.max(0, Math.min(comment.depth ?? 0, 3)) * 14}px` }}
+                      >
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <Link href={`/u/${comment.author.alias}`} className="font-semibold hover:underline" onClick={handleLinkClick}>
                             {comment.author.name ?? comment.author.alias}

@@ -32,6 +32,58 @@ const mapComment = (comment: {
   author: comment.author,
 });
 
+type CommentNode = {
+  id: string;
+  content: string;
+  createdAt: Date;
+  parentCommentId: string | null;
+  postId: string;
+  rootPostId: string;
+  author: { id: string; name: string | null; image: string | null; alias: string };
+};
+
+function flattenCommentTree(comments: CommentNode[]) {
+  const childrenByParent = new Map<string, CommentNode[]>();
+  const roots: CommentNode[] = [];
+
+  comments.forEach((comment) => {
+    if (!comment.parentCommentId) {
+      roots.push(comment);
+      return;
+    }
+    const siblings = childrenByParent.get(comment.parentCommentId) ?? [];
+    siblings.push(comment);
+    childrenByParent.set(comment.parentCommentId, siblings);
+  });
+
+  const byAscTime = (a: CommentNode, b: CommentNode) => a.createdAt.getTime() - b.createdAt.getTime();
+  roots.sort(byAscTime);
+  childrenByParent.forEach((nodes) => nodes.sort(byAscTime));
+
+  const flattened: Array<ReturnType<typeof mapComment> & { depth: number }> = [];
+  const stack = roots
+    .slice()
+    .reverse()
+    .map((root) => ({ node: root, depth: 0 }));
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    flattened.push({
+      ...mapComment(current.node),
+      depth: current.depth,
+    });
+
+    const children = childrenByParent.get(current.node.id) ?? [];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({ node: children[index], depth: current.depth + 1 });
+    }
+  }
+
+  return flattened;
+}
+
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: postId } = await params;
   const comments = await prisma.comment.findMany({
@@ -42,7 +94,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     orderBy: { createdAt: "asc" },
   });
 
-  return NextResponse.json(comments.map(mapComment));
+  return NextResponse.json(flattenCommentTree(comments));
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
