@@ -99,13 +99,6 @@
 - **明確定義遞迴留言體驗（本週優先）**：在「單層 drill-down」與「樹狀展開」間擇一主方案，並補上 breadcrumb / root post 快速返回入口，降低迷航感。
 - **補強路由與狀態同步**：把留言相關頁面的資料更新策略統一（集中 mutate key），並補齊從深連結進入時的 fallback 導覽。
 - **補測試與壓力驗證**：新增留言深度/刪除/跳轉的整合測試，並以測試資料評估不同查詢策略在延遲與 payload 的差異。
-### 與課程的關聯
-
-- **Tree / DFS（核心）**：留言資料本質是樹結構（`parentCommentId`），本次修正使用 DFS preorder 讓顯示順序符合討論脈絡，也能分析時間/空間複雜度。
-- **Graph（社交網路）**：追蹤關係可視為有向圖（User -> User），首頁 feed 會基於這個圖做節點集合與內容聚合。
-- **Sorting 與 Stable Ordering**：同層留言以時間排序、跨層以樹遍歷順序組合，展示了「單一排序規則不足」時需分層排序與遍歷策略。
-- **Hash-based lookup / Map**：在建構留言樹時使用 `Map<parentId, children[]>` 做 O(1) 期望查找，降低巢狀掃描成本。
-- **Complexity-aware engineering**：在功能設計中持續權衡 UX 與查詢成本（如一次載完整樹 vs 分層載入），把 DSA 從理論轉成系統設計決策。
 
 ---
 
