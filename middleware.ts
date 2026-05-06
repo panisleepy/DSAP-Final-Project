@@ -8,6 +8,15 @@ function isProtectedApiPath(pathname: string) {
   return PROTECTED_BASE_PATHS.some((base) => pathname === base || pathname.startsWith(`${base}/`));
 }
 
+function getClientIp(req: NextRequest) {
+  const forwardedFor = req.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || "unknown";
+  }
+
+  return req.headers.get("x-real-ip") || "unknown";
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -23,8 +32,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const forwardedFor = req.headers.get("x-forwarded-for");
-  const ip = forwardedFor?.split(",")[0]?.trim() || req.ip || "unknown";
+  const ip = getClientIp(req);
   const key = `${ip}:${pathname}`;
 
   const result = await ipRatelimit.limit(key);
