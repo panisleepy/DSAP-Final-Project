@@ -1,12 +1,95 @@
 # Murmurland（X-Clone 社群平台）
 
+## 🔗 專案資源連結
+
 | 項目 | 說明 |
 |------|------|
 | **線上 Demo** | https://murmurland.vercel.app |
 | **Demo 影片** | https://www.youtube.com/watch?v=PwJ97Ofu4Uc |
-| **技術棧** | Next.js App Router · React · Tailwind CSS · MongoDB · Prisma · Pusher · NextAuth |
+| **Benchmark 測試頁（本機）** | http://localhost:3000/admin/benchmark |
 
-Murmurland 是以 Next.js 打造的類 Twitter 社群平台，支援發文、巢狀留言、按讚、轉發、追蹤與即時通知。期末 DSA 主軸為 **留言樹** 的資料結構建模，以及 **Baseline 排序 vs Map+DFS 展平** 的效能對照實驗。
+---
+
+## Proposal Report
+
+### 動機與目標
+
+微型部落格與即時動態已成為資訊傳播與社群互動的主要載體。本專題 Murmurland 旨在以全端 Web 應用實作一套可運作之類 Twitter（X）平台：支援發文、留言、社交關係、主題標籤與即時通知。
+
+**具體目標：**
+
+- 打造一個完整的現代前後端架構（Next.js App Router + MongoDB）。
+- 將「討論串與留言」建模為階層式資料，實作遞迴留言與分層顯示的 UI。
+- 將「追蹤關係」建模為有向圖 (Directed Graph)，並用它來產生個人的動態時報。
+- 串接 Pusher 達成即時互動，練習事件驅動 (Event-driven) 與非同步的資料處理。
+
+### 競品比較
+
+| 比較維度 | Murmurland (本專題) | Dcard | Threads |
+| :--- | :--- | :--- | :--- |
+| **核心定位** | 專注於技術實證與輕量化交流的微社群 | 綜合型校園匿名論壇 | 依附於 IG 的即時動態微網誌 |
+| **目標受眾** | 專題展示、重視流暢體驗的小型社群 | 全台大專院校學生 | 一般大眾、KOL 粉絲 |
+| **身分機制** | **Google OAuth 實名/綁定驗證** | 校系信箱匿名/半匿名驗證 | Instagram 帳號連動 |
+| **效能透明度** | **高** (主打演算法效能對比與架構展示) | 低 (商業機密，不公開) | 低 (商業機密，不公開) |
+| **資訊乘載量** | 輕量、短文字「Murmur」為主 | 中長篇圖文、深度討論 | 短文字、圖片、影片 |
+| **專題亮點區隔** | 不盲目堆疊功能，**著重探討留言樹在不同資料結構與演算法下的效能與語意差異**，具備學術與工程實證價值。 | 具備高度商業化與成熟的社群生態圈，功能龐大複雜。 | 擁有極高的併發處理能力與推薦演算法，依賴 Meta 龐大資源。 |
+
+### 預期功能
+
+| 類別 | 預期功能 |
+| ----------- | --------------------------------------------------------------------------- |
+| **內容與討論** | 發表貼文（含圖片）、貼文執行緒（`parentPostId`／`rootPostId`）、留言與巢狀回覆（`parentCommentId`）、刪除。 |
+| **社交圖譜** | 追蹤 / 取消追蹤、查看粉絲與追蹤中清單、編輯個人檔案。 |
+| **動態與探索** | 首頁與追蹤中的動態時報、轉發 (Repost) 內容混入排序、Hashtag 主題專屬頁面、`@mention` 標記與跳通知。 |
+| **即時與通知** | Pusher 廣播（貼文／留言／讚／轉傳／通知頻道）、通知中心與未讀狀態。 |
+| **帳號與基礎建設** | NextAuth、草稿、圖片上傳（Cloudinary）、環境變數與部署設定。 |
+
+### 使用技術
+
+- **前端：** Next.js（App Router）、React、Tailwind CSS、SWR、TypeScript
+- **後端：** Next.js API Routes（`app/api/`）
+- **資料層：** MongoDB Atlas、Prisma ORM（schema 與查詢）、MongoDB 原生驅動（部分寫入與原子操作）
+- **即時：** Pusher（伺服器 trigger／客戶端 subscribe）
+- **驗證與媒體：** NextAuth、Cloudinary
+
+### Prototype 預計可驗證內容
+
+1. **核心身分認證流程 (Authentication Flow)**
+   * **驗證目標**：確保使用者能安全、穩定地進入系統。
+   * **具體指標**：成功串接 OAuth 2.0，展示完整的 Google 第三方登入機制，並能正確攔截未授權的路由存取。
+2. **非同步內容發布與即時互動 (Async Content & Real-time Interaction)**
+   * **驗證目標**：驗證社群平台最核心的資料流轉能力。
+   * **具體指標**：使用者能成功發布貼文與留言，並驗證資料庫 (MongoDB) 讀寫延遲在合理範圍內。
+3. **資料庫檢索與效能實測 (Empirical Performance Demo)**
+   * **驗證目標**：證明系統架構具備處理大量資料的潛力。
+   * **具體指標**：在注入大量巢狀留言測試資料的情境下，實際展示不同留言展平演算法的伺服器端運算時間與輸出語意差異。
+
+---
+
+## Prototype Report
+
+### 目前進度
+
+- **核心功能已可操作**：完成 Google OAuth 登入、首頁動態時報、發文、留言、按讚、轉發、通知與個人頁。
+- **資料模型已落地**：貼文採 `rootPostId` / `parentPostId`，留言採 `parentCommentId` / `rootPostId`，可支援 thread 與巢狀回覆。
+- **遞迴留言流程已可 demo**：從貼文頁點進某則留言後，能 route 到該留言頁，並可繼續往下一層留言鑽取。
+- **留言串顯示邏輯已修正**：貼文頁留言改為「樹狀展平順序（DFS preorder）」，順序由原本可能的 `A, B, A-1`，修正為 `A, A-1, B`，更接近 Twitter 的閱讀感受。
+- **即時互動基礎完成**：透過 Pusher 觸發 `comment:created` 等事件，前端可自動 revalidate 更新畫面。
+- **部署與展示完成**：已上線 Vercel，Demo 影片已錄製完成。
+
+### 遇到的困難
+
+* **留言排序與使用者心智模型不一致（已部分修復）**：最初 API 僅依賴時間排序，導致子留言會跑到其他主留言的下方。目前改為先建構父子關係 (Parent-children)，再透過深度優先搜尋 (DFS) 展平，讓回覆能緊跟在其父留言下方。
+* **路由語意與返回行為複雜**：不同深度的留言頁面交錯切換時，瀏覽器的返回上一頁 (Back) 行為容易混亂。特別是當使用者從外部連結直接進入深層留言時，因缺乏歷史紀錄，返回路徑常不符合預期。
+* **互動數據同步成本高**：留言新增、刪除、讚數與轉發數需要跨多個頁面（貼文頁、留言頁、通知中心）同步更新，前端的快取與狀態管理容易出現短暫的資料不一致。
+* **效能與查詢策略的瓶頸**：當留言層數與數量增加時，若每層都即時向資料庫查詢父子節點，API 請求次數與網路傳輸量 (Payload) 會急遽上升，需要設計更精確的查詢與快取策略。
+* **邊界情境 (Edge Cases) 尚未完全覆蓋**：例如父留言已刪除但子留言還在的狀況、深層連結失效 (404) 的錯誤提示文案等，仍需補齊。
+
+### 下一步計畫
+
+* **明確定義遞迴留言體驗（本週優先）**：在「單層逐層深入」與「全樹狀展開」之間擇一作為主要方案，並補上麵包屑導覽 (Breadcrumb) 或快速返回根貼文的按鈕，降低使用者的迷航感。
+* **補強路由與資料同步機制**：統一留言相關頁面的前端快取更新策略，並補齊從深層連結進入時的預設導覽 (Fallback) 路徑。
+* **補測試與壓力驗證**：新增留言深度、刪除與跳轉的整合測試，並注入大量測試資料，評估不同資料庫查詢策略在延遲時間上的實際差異。
 
 ---
 
@@ -14,24 +97,20 @@ Murmurland 是以 Next.js 打造的類 Twitter 社群平台，支援發文、巢
 
 ### 專案說明
 
-#### 動機與目標
+Murmurland 是以 Next.js 打造的類 Twitter 社群平台，支援發文、巢狀留言、按讚、轉發、追蹤與即時通知。期末將 **留言樹** 作為 DSA 核心：在 MongoDB 以鄰接表（`parentCommentId`）持久化，讀取時以 **Map + Stack DFS** 展平，並建立 Benchmark 對照 **Array.sort（方案 A）** 與 **Map+DFS（方案 B）** 在 N=4,000 筆資料下的效能與語意差異。
 
-微型部落格已是資訊傳播與社群互動的主要載體。本專題實作可運作的類 Twitter 平台，並以「討論串留言」為核心，探討**階層式資料**在 NoSQL 中的存法，以及讀取時不同演算法策略的效能與語意差異。
+#### 系統架構
 
-**具體目標：**
-
-- 以 Next.js App Router + MongoDB 完成全端社群平台。
-- 將留言建模為**一般多叉樹**（`parentCommentId`），並以 DFS 展平成 UI 可讀順序。
-- 將追蹤關係建模為**有向圖**（Follow 邊），支援「追蹤中」動態時報。
-- 建立 Benchmark 實驗：在 N=4,000 筆巢狀留言下，對照 **Array.sort** 與 **Map + Stack DFS** 兩種展平策略。
-
-#### 已完成功能
-
-- Google OAuth 登入、首頁動態時報、發文（含圖片）、巢狀留言、按讚、轉發、通知、個人頁
-- 留言串以 **Map 鄰接表 + Stack DFS** 展平（子留言緊接父留言）
-- Pusher 即時事件（新留言、按讚等）
-- DSA Benchmark 頁：`/admin/benchmark`（方案 A/B 對照、計時、深度分布）
-- 部署於 Vercel
+```
+Browser (Next.js React)
+        │
+        ▼
+Next.js API Routes (app/api/**)
+        │
+        ├── MongoDB Atlas (Post, Comment, Like, Follow, User…)
+        ├── Pusher (即時事件)
+        └── Cloudinary (圖片)
+```
 
 #### 資料結構與 DSA 重點
 
@@ -44,15 +123,15 @@ Murmurland 是以 Next.js 打造的類 Twitter 社群平台，支援發文、巢
 | **Directed Graph** | `Follow`：`followerId → followingId` |
 | **Set** | 動態時報載入時，以 `Set` 快速判斷使用者是否已按讚 |
 
-**留言存法（NoSQL）：** 每則留言為 MongoDB 一筆 Document，不嵌套整棵樹；新增回覆只需 `insertOne` 並填 `parentCommentId`。
-
-**Benchmark 對照：**
+#### Benchmark 實驗結論
 
 | | 方案 A（Baseline） | 方案 B（Optimized，產品採用） |
 |--|-------------------|------------------------------|
 | 做法 | `Array.sort` 依時間 | Map 建樹 + Stack DFS |
 | 輸出 | 可能 `A, B, A-1` | `A, A-1, B`（正確 thread） |
 | 結論 | 實驗對照基線 | **Trade-off**：可接受的運算成本，換正確 Context |
+
+實驗顯示純排序的 `executionTimeMs` 有時可能更低，但無法保證討論串閱讀順序；產品因此採用方案 B。
 
 #### 主要程式位置
 
@@ -64,6 +143,13 @@ Murmurland 是以 Next.js 打造的類 Twitter 社群平台，支援發文、巢
 | 測試資料 seed | `prisma/seed.ts` |
 | Schema | `prisma/schema.prisma` |
 | 動態時報 + Set | `lib/timeline.ts` |
+
+#### 與課程的關聯
+
+1. **Tree + 鄰接表**：留言以 `parentCommentId` 存父子關係；讀取時重建樹並 DFS 展平。
+2. **演算法分析**：Benchmark 在固定 `findMany` 下比較排序與 Map+DFS，以 `performance.now()` 實測 `executionTimeMs`。
+3. **Trade-off**：效能與業務語意（討論串 Context）的 engineering 決策。
+4. **Graph / Set**：追蹤關係與按讚狀態查詢的實務應用。
 
 ---
 
@@ -108,42 +194,6 @@ npm run dev
 #### 部署
 
 於 Vercel（或其他平台）設定與 `.env.local` 相同的環境變數，部署後即可使用線上 Demo。
-
----
-
-### 與課程的關聯總結
-
-本專題將 DSAP 課程中的 **Tree、Graph、Sorting、Stack、Hash Map（JavaScript Map/Set）** 落實在真實 Web 場景：
-
-1. **Tree + 鄰接表**：留言以 `parentCommentId` 存父子關係；讀取時重建樹並 DFS 展平，解決「子留言應緊接父留言」的業務需求。
-2. **演算法分析**：Benchmark 在固定 `findMany` 下比較 O(n log n) 排序與 O(n) 建表 + DFS，以 `performance.now()` 實測 `executionTimeMs`。
-3. **工程 Trade-off**：實驗顯示純排序可能更快，但破壞討論串語意；產品選擇 Map+DFS，體現**效能與業務邏輯的權衡**。
-4. **Graph**：追蹤關係以有向邊建模，支援動態時報的鄰居查詢。
-5. **Set**：時報渲染時 O(1) 判斷按讚狀態，降低重複線性搜尋成本。
-
----
-
-## 系統架構
-
-```
-Browser (Next.js React)
-        │
-        ▼
-Next.js API Routes (app/api/**)
-        │
-        ├── MongoDB Atlas (Post, Comment, Like, Follow, User…)
-        ├── Pusher (即時事件)
-        └── Cloudinary (圖片)
-```
-
----
-
-## 遇到的困難
-
-- **留言排序與 UX**：最初僅時間排序，子留言會脫離父留言；改以 Map+DFS 展平後改善。
-- **深層留言路由**：多層留言頁切換時，瀏覽器返回行為需額外處理。
-- **快取同步**：留言、按讚數需跨頁面一致，前端 SWR / revalidate 需配合 Pusher 事件。
-- **本機開發環境**：Next.js cache、OAuth 憑證與單一 dev server 需正確設定，避免 API 404 或登入失敗。
 
 ---
 
