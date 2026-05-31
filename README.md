@@ -97,59 +97,142 @@
 
 ### 專案說明
 
-Murmurland 是以 Next.js 打造的類 Twitter 社群平台，支援發文、巢狀留言、按讚、轉發、追蹤與即時通知。期末將 **留言樹** 作為 DSA 核心：在 MongoDB 以鄰接表（`parentCommentId`）持久化，讀取時以 **Map + Stack DFS** 展平，並建立 Benchmark 對照 **Array.sort（方案 A）** 與 **Map+DFS（方案 B）** 在 N=4,000 筆資料下的效能與語意差異。
+#### 專題概述
+
+Murmurland 是以 Next.js 打造的類 Twitter 社群平台，已完成可對外 Demo 的完整流程：Google 登入、動態時報、發文（含圖片）、巢狀留言、按讚、轉發、追蹤、通知與個人頁，並部署於 Vercel。
+
+本專題的 **DSA 核心** 放在「留言樹」：討論串在邏輯上是一棵**一般多叉樹**，每則留言透過 `parentCommentId` 指向父留言。我們實作了兩種把樹「展平成 UI 可讀列表」的策略，並在 **N = 4,000** 筆、最深十幾層的測試資料下，以 Benchmark 頁實測伺服器端運算時間與輸出語意，最後說明為何產品採用 **Map + Stack DFS（方案 B）**，而非單純時間排序（方案 A）。
+
+#### 完成成果摘要
+
+| 類別 | 完成內容 |
+|------|----------|
+| **產品功能** | OAuth 登入、首頁／追蹤中時報、發文、巢狀留言、按讚、轉發、Hashtag、`@mention`、通知、個人頁 |
+| **資料建模** | Post thread（`parentPostId` / `rootPostId`）、Comment 樹（`parentCommentId`）、Follow 有向圖、Like 關聯 |
+| **留言展平** | 產品 API 預設 **Map 鄰接表 + Stack DFS 前序走訪**，子留言緊接父留言 |
+| **效能實驗** | `/admin/benchmark`：方案 A/B 對照、計時看板、語意預覽、深度分布統計 |
+| **測試資料** | `npm run db:seed` 注入 4,000 筆隨機 parent 生長的留言樹 |
+| **部署展示** | Vercel 線上 Demo + 錄影 |
 
 #### 系統架構
 
 ```
-Browser (Next.js React)
-        │
-        ▼
-Next.js API Routes (app/api/**)
-        │
-        ├── MongoDB Atlas (Post, Comment, Like, Follow, User…)
-        ├── Pusher (即時事件)
-        └── Cloudinary (圖片)
+┌──────────────────────────────────────────────────────────┐
+│  Browser — React 頁面（首頁、貼文、留言、Benchmark UI）     │
+└────────────────────────────┬─────────────────────────────┘
+                             │ HTTP / fetch / SWR
+┌────────────────────────────▼─────────────────────────────┐
+│  Next.js App Router                                       │
+│  ├── app/          前端頁面                               │
+│  └── app/api/**    API Routes（後端邏輯）                  │
+│  └── lib/          演算法、動態時報、工具                  │
+└────────────────────────────┬─────────────────────────────┘
+                             │ Prisma / MongoDB Driver
+┌────────────────────────────▼─────────────────────────────┐
+│  MongoDB Atlas                                            │
+│  Post · Comment · Like · Follow · User · Notification…    │
+└──────────────────────────────────────────────────────────┘
+
+     Pusher（即時事件）          Cloudinary（圖片）
+     NextAuth（Google OAuth）
 ```
 
-#### 資料結構與 DSA 重點
+資料存放在 **MongoDB 雲端**，不在專案資料夾；`prisma/schema.prisma` 定義各 Collection 的文件結構。
 
-| 概念 | 在本專題的體現 |
-|------|----------------|
-| **Tree（多叉樹）** | 留言 `parentCommentId` 指向父節點 |
-| **Adjacency List（鄰接表）** | MongoDB 每筆 Comment 只存 parent 指標；讀取後以 `Map<parentId, children[]>` 重建 |
-| **Stack + DFS** | `lib/comment-algorithms.ts` 迭代 DFS，`push`/`pop` 展平留言串 |
-| **Array + Sort** | 方案 A baseline：全表依 `createdAt` 排序 |
-| **Directed Graph** | `Follow`：`followerId → followingId` |
-| **Set** | 動態時報載入時，以 `Set` 快速判斷使用者是否已按讚 |
+#### 留言樹如何儲存（NoSQL + 鄰接表）
 
-#### Benchmark 實驗結論
+MongoDB 採 **Document** 存法：每則留言是一筆獨立文件，**不**把整棵樹嵌套在一個 JSON 裡。
+
+| 欄位 | 意義 |
+|------|------|
+| `_id` | 留言唯一 ID |
+| `postId` | 所屬貼文 |
+| `parentCommentId` | 父留言 ID；`null` 表示第一層根留言 |
+| `content`, `authorId`, `createdAt` | 內容、作者、時間 |
+
+**鄰接表存法（Adjacency List）**：每筆只記「直接父節點是誰」。新增回覆只需 `insertOne` 一筆並填 `parentCommentId`，無需改動其他留言。
+
+**讀取時**才在記憶體重建樹狀結構：
+
+```
+findMany 撈回 N 筆扁平 Comment
+    → Map 建 parent → children[]
+    → Stack DFS（push / pop）前序走訪
+    → 展平陣列 + depth，交給 React 依 depth 縮排渲染
+```
+
+#### 資料結構與 DSA 對應
+
+| 資料結構 | 儲存層（MongoDB） | 運算層（Node.js 記憶體） | 用途 |
+|----------|-------------------|-------------------------|------|
+| **Tree（多叉樹）** | `parentCommentId` | Map + DFS 展平 | 討論串父子關係 |
+| **Adjacency List** | 每筆 Comment 的 parent 指標 | `Map<parentId, children[]>` | 建樹 |
+| **Stack** | — | DFS 迭代 `push`/`pop` | 走訪順序 |
+| **Array + Sort** | — | 方案 A 全表 sort；Timeline merge sort | 時間排序 |
+| **Directed Graph** | Follow 文件（follower → following） | 查鄰居 ID 篩貼文 | 追蹤中動態 |
+| **Set** | — | `likedIds.has(postId)` | 快速判斷是否已按讚 |
+
+> **說明**：Map、Stack、Set 存在程式執行時的記憶體中；MongoDB 持久化的是 Document 與 ID 指標。
+
+#### Benchmark 實驗設計
+
+**實驗問題**：在固定資料量與固定 DB 查詢下，兩種留言展平策略的伺服器端運算成本與輸出品質有何差異？
+
+| 項目 | 設定 |
+|------|------|
+| 測試貼文 ID | `85e110db17700e77582a81f1` |
+| 留言筆數 | 4,000（10 根留言 + 3,990 則隨機選 parent） |
+| 控制變因 | 同一貼文、同一 `findMany`、同一環境 |
+| 自變數 | `?algo=baseline` vs `?algo=optimized` |
+| 依變數 | `executionTimeMs`（主）、`dbFetchTimeMs`、`depthDistribution` |
+| 量測方式 | API 內 `performance.now()` 分開計 DB 與演算法兩段 |
+| Warm-up | 每方案前 1～2 次不計，第 3 次起記錄 |
+
+**不包含**：瀏覽器渲染 4,000 個 DOM 的時間（Benchmark 頁僅預覽前 20 筆）。
+
+#### 方案 A vs 方案 B
 
 | | 方案 A（Baseline） | 方案 B（Optimized，產品採用） |
 |--|-------------------|------------------------------|
-| 做法 | `Array.sort` 依時間 | Map 建樹 + Stack DFS |
-| 輸出 | 可能 `A, B, A-1` | `A, A-1, B`（正確 thread） |
-| 結論 | 實驗對照基線 | **Trade-off**：可接受的運算成本，換正確 Context |
+| **資料結構** | 扁平 Array | Map（鄰接表）+ Stack + 輸出 Array |
+| **演算法** | `Array.sort` 依 `createdAt` | 建表 O(n) + 各層兄弟排序 + DFS O(n) |
+| **複雜度** | 約 O(n log n) | 約 O(n)～O(n log n) |
+| **depth** | 全部視為 0 | 正確標記 0, 1, 2, … |
+| **輸出順序** | 可能 `A, B, A-1` | `A, A-1, B`（Twitter 式 thread） |
+| **語意** | 子留言可能脫離父留言上下文 | 子留言緊接父留言 |
+| **executionTimeMs** | 有時略低（V8 sort 高度優化） | 可能略高，但語意正確 |
 
-實驗顯示純排序的 `executionTimeMs` 有時可能更低，但無法保證討論串閱讀順序；產品因此採用方案 B。
+**Trade-off 結論**：方案 A 適合作為「未建樹、僅排序」的對照基線；方案 B 多付出 Map 配置與 DFS 走訪的常數成本，換取**正確的討論串 Context 與 UX**。這是效能與業務邏輯的 engineering 決策，而非單純追求最小毫秒數。
 
 #### 主要程式位置
 
 | 用途 | 路徑 |
 |------|------|
-| 留言演算法 A/B | `lib/comment-algorithms.ts` |
-| 留言 API + 計時 | `app/api/posts/[id]/comments/route.ts` |
-| Benchmark UI | `app/admin/benchmark/page.tsx` |
+| 方案 A / B 演算法 | `lib/comment-algorithms.ts` |
+| 留言 API + Benchmark 計時 | `app/api/posts/[id]/comments/route.ts` |
+| Benchmark 控制台 UI | `app/admin/benchmark/page.tsx` |
 | 測試資料 seed | `prisma/seed.ts` |
-| Schema | `prisma/schema.prisma` |
-| 動態時報 + Set | `lib/timeline.ts` |
+| 常數（4000 筆、post id） | `lib/benchmark.ts` |
+| MongoDB Schema | `prisma/schema.prisma` |
+| 動態時報 merge + Set | `lib/timeline.ts` |
+| 追蹤（有向圖加邊／刪邊） | `app/api/users/[alias]/follow/route.ts` |
+| 按讚 insert / delete | `app/api/posts/[id]/like/route.ts` |
 
-#### 與課程的關聯
+#### 與課程（DSAP）的關聯
 
-1. **Tree + 鄰接表**：留言以 `parentCommentId` 存父子關係；讀取時重建樹並 DFS 展平。
-2. **演算法分析**：Benchmark 在固定 `findMany` 下比較排序與 Map+DFS，以 `performance.now()` 實測 `executionTimeMs`。
-3. **Trade-off**：效能與業務語意（討論串 Context）的 engineering 決策。
-4. **Graph / Set**：追蹤關係與按讚狀態查詢的實務應用。
+1. **Tree**：留言 `parentCommentId` 形成一般多叉樹；需求是閱讀順序，非 BST 式 key 搜尋。
+2. **Graph**：Follow 以有向邊建模，支援「追蹤中」動態的鄰居查詢。
+3. **Adjacency List + DFS**：NoSQL 扁平存、記憶體建 Map、Stack 前序展平——完整示範「持久化結構」與「運算結構」的分工。
+4. **Sorting**：方案 A 與 Timeline 的 merge sort，對照樹走訪與純排序的差異。
+5. **Set**：時報渲染 O(1) 查詢按讚狀態，避免對每張卡線性掃描。
+6. **演算法分析 + 實證**：控制 DB 查詢一致，以 `executionTimeMs` 比較常數因子與語意，並討論 Trade-off。
+
+#### 已知限制與後續方向
+
+- 深層留言頁的瀏覽器返回行為仍可能不符合使用者預期，尚缺麵包屑或統一 Fallback 導覽。
+- 父留言刪除後子留言的顯示策略（soft delete 過濾）尚未完整處理所有 edge case。
+- Benchmark 量測為單次 `findMany` 後的記憶體演算法，未涵蓋分頁、快取、CDN 等 production 優化。
+- 4000 筆一次展平在真實貼文頁仍可能因 DOM 數量影響體感；產品 UI 可進一步做虛擬列表或分頁載入。
 
 ---
 
@@ -159,27 +242,46 @@ Next.js API Routes (app/api/**)
 
 - Node.js 18+
 - MongoDB Atlas（或本機 MongoDB）
-- （選用）Pusher、Cloudinary、Google OAuth 憑證
+- Google OAuth 憑證（NextAuth）
+- （選用）Pusher、Cloudinary
+
+#### 環境變數
+
+複製 `env.example` 為 `.env.local`，至少填入：
+
+| 變數 | 用途 |
+|------|------|
+| `DATABASE_URL` | MongoDB 連線 |
+| `NEXTAUTH_URL` / `NEXTAUTH_SECRET` | 登入 session |
+| `GOOGLE_ID` / `GOOGLE_SECRET` | Google OAuth |
+| `PUSHER_*` | 即時事件（選用） |
+| `CLOUDINARY_*` | 圖片上傳（選用） |
 
 #### 本機啟動
 
 ```bash
 npm install
-cp env.example .env.local   # 填入 DATABASE_URL、NextAuth、Google OAuth 等
-npm run db:push             # 同步 Prisma schema
-npm run db:seed             # 注入 Benchmark 測試留言（約 4,000 筆）
-npm run dev
+cp env.example .env.local
+npm run db:push      # 同步 Prisma schema 至 MongoDB
+npm run db:seed      # 注入 Benchmark 測試留言（約 4,000 筆）
+npm run dev          # 請只開一個 dev server
 ```
 
-瀏覽器開啟 http://localhost:3000
+- 一般使用：http://localhost:3000
+- Benchmark：http://localhost:3000/admin/benchmark（**不需登入**）
 
-#### Benchmark 實驗
+#### Benchmark 實驗步驟
 
-1. 開啟 http://localhost:3000/admin/benchmark
-2. 方案 A/B 各先點 1～2 次 **warm-up**（不計成績）
-3. 從第 3 次起記錄 **伺服器純運算 ms**（`executionTimeMs`）與 **DB ms**（`dbFetchTimeMs`）
-4. 魔王貼文 ID：`85e110db17700e77582a81f1`
-5. API：`GET /api/posts/{postId}/comments?algo=baseline` 或 `?algo=optimized`
+1. 確認 `npm run db:seed` 已成功，總筆數顯示 **4000**
+2. 開啟 `/admin/benchmark`
+3. **Warm-up**：方案 A、B 各點 1～2 次，不計成績（排除冷啟動／JIT 影響）
+4. 從第 3 次起記錄看板上的 **伺服器純運算 ms**（`executionTimeMs`）與 **DB ms**（`dbFetchTimeMs`）
+5. 對照預覽區：A 無縮排且可能有「上下文斷裂」；B 有 depth 階層縮排與深度分布表
+6. 亦可直接呼叫 API：
+   ```
+   GET /api/posts/85e110db17700e77582a81f1/comments?algo=baseline
+   GET /api/posts/85e110db17700e77582a81f1/comments?algo=optimized
+   ```
 
 #### 常用指令
 
@@ -188,12 +290,25 @@ npm run dev
 | `npm run dev` | 開發模式 |
 | `npm run build` | 正式建置 |
 | `npm run start` | 正式模式啟動 |
+| `npm run db:push` | 推送 Prisma schema |
 | `npm run db:seed` | 重置 Benchmark 測試留言 |
 | `npm run lint` | Lint 檢查 |
 
-#### 部署
+#### 部署（Vercel）
 
-於 Vercel（或其他平台）設定與 `.env.local` 相同的環境變數，部署後即可使用線上 Demo。
+1. 連接 GitHub repo，選 `main` 分支
+2. 於 Vercel 後台設定與 `.env.local` 相同的環境變數
+3. Google OAuth 須加入 production callback URL
+4. 部署完成後使用 https://murmurland.vercel.app 驗收
+
+#### 常見問題
+
+| 問題 | 建議處理 |
+|------|----------|
+| Benchmark 總筆數為 0 | 執行 `npm run db:seed` |
+| API 404 / Failed to load | 關閉多餘 `npm run dev`，刪除 `.next` 後重開 |
+| 本機 Google 登入失敗 | 確認 `GOOGLE_SECRET` 與 Google Console redirect URI 含 `localhost:3000` |
+| `Unable to acquire lock` | 只保留一個 dev server |
 
 ---
 
