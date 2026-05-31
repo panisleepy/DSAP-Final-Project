@@ -1,14 +1,10 @@
 import type { NextConfig } from "next";
 
+import { ALLOWED_IMAGE_REMOTE_PATTERNS } from "./lib/allowed-image-hosts";
+
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "lh3.googleusercontent.com" },
-      { protocol: "https", hostname: "avatars.githubusercontent.com" },
-      { protocol: "https", hostname: "i.pinimg.com" },
-      { protocol: "https", hostname: "images.plurk.com" },
-      { protocol: "https", hostname: "res.cloudinary.com" },
-    ],
+    remotePatterns: ALLOWED_IMAGE_REMOTE_PATTERNS,
   },
 };
 

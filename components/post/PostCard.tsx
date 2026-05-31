@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Heart, MessageCircle, MoreHorizontal, Repeat2 } from 'lucide-react';
 
+import { isAllowedRemoteImageUrl } from '@/lib/allowed-image-hosts';
 import { getPusherClient } from '@/lib/pusher-client';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/time';
@@ -358,10 +359,10 @@ export function PostCard({
             </Link>
           </header>
           <p className="text-base leading-relaxed text-brandText">{formatted}</p>
-          {post.imageUrl && (
+          {isAllowedRemoteImageUrl(post.imageUrl) && (
             <div className="relative mt-3 overflow-hidden rounded-3xl border border-white/70 bg-white/60">
               <Image
-                src={post.imageUrl}
+                src={post.imageUrl!}
                 alt="Post media"
                 width={800}
                 height={600}
@@ -537,7 +538,9 @@ function highlightMentions(content: string, currentUserAlias?: string | null) {
 }
 
 function AuthorAvatar({ image, alias }: { image: string | null; alias: string }) {
-  if (!image) {
+  const avatarSrc = isAllowedRemoteImageUrl(image) ? image!.trim() : null;
+
+  if (!avatarSrc) {
     return (
       <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-gradient-to-br from-brandBlue to-brandPink text-lg font-semibold text-brandText">
         {alias.slice(0, 1).toUpperCase()}
@@ -547,7 +550,7 @@ function AuthorAvatar({ image, alias }: { image: string | null; alias: string })
 
   return (
     <div className="relative h-12 w-12 overflow-hidden rounded-3xl">
-      <Image src={image} alt={alias} fill className="object-cover" sizes="48px" />
+      <Image src={avatarSrc} alt={alias} fill className="object-cover" sizes="48px" />
     </div>
   );
 }

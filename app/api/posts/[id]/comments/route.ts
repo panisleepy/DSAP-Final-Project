@@ -2,27 +2,28 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { pusherServer } from "@/lib/pusher-server";
-import { measureTweetLength } from "@/lib/text-counter";
+import {
+  buildDepthDistribution,
+  flattenCommentsOptimized,
+  parseCommentAlgo,
+  runCommentAlgorithm,
+  type CommentAlgo,
+  type CommentNode,
+  type DepthDistributionSummary,
+} from "@/lib/comment-algorithms";
 import { extractMentions } from "@/lib/mentions";
 import { createNotification, dispatchMentionNotifications } from "@/lib/notifications";
 import { ensureObjectId, getDb } from "@/lib/mongo";
+import { prisma } from "@/lib/prisma";
+import { pusherServer } from "@/lib/pusher-server";
+import { measureTweetLength } from "@/lib/text-counter";
 
 const commentSchema = z.object({
   content: z.string().min(1).max(2000),
   parentCommentId: z.string().optional(),
 });
 
-const mapComment = (comment: {
-  id: string;
-  content: string;
-  createdAt: Date;
-  parentCommentId: string | null;
-  postId: string;
-  rootPostId: string;
-  author: { id: string; name: string | null; image: string | null; alias: string };
-}) => ({
+const mapComment = (comment: CommentNode) => ({
   id: comment.id,
   content: comment.content,
   createdAt: comment.createdAt.toISOString(),
@@ -32,60 +33,8 @@ const mapComment = (comment: {
   author: comment.author,
 });
 
-type CommentNode = {
-  id: string;
-  content: string;
-  createdAt: Date;
-  parentCommentId: string | null;
-  postId: string;
-  rootPostId: string;
-  author: { id: string; name: string | null; image: string | null; alias: string };
-};
-
-function flattenCommentTree(comments: CommentNode[]) {
-  const childrenByParent = new Map<string, CommentNode[]>();
-  const roots: CommentNode[] = [];
-
-  comments.forEach((comment) => {
-    if (!comment.parentCommentId) {
-      roots.push(comment);
-      return;
-    }
-    const siblings = childrenByParent.get(comment.parentCommentId) ?? [];
-    siblings.push(comment);
-    childrenByParent.set(comment.parentCommentId, siblings);
-  });
-
-  const byAscTime = (a: CommentNode, b: CommentNode) => a.createdAt.getTime() - b.createdAt.getTime();
-  roots.sort(byAscTime);
-  childrenByParent.forEach((nodes) => nodes.sort(byAscTime));
-
-  const flattened: Array<ReturnType<typeof mapComment> & { depth: number }> = [];
-  const stack = roots
-    .slice()
-    .reverse()
-    .map((root) => ({ node: root, depth: 0 }));
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) continue;
-
-    flattened.push({
-      ...mapComment(current.node),
-      depth: current.depth,
-    });
-
-    const children = childrenByParent.get(current.node.id) ?? [];
-    for (let index = children.length - 1; index >= 0; index -= 1) {
-      stack.push({ node: children[index], depth: current.depth + 1 });
-    }
-  }
-
-  return flattened;
-}
-
-export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id: postId } = await params;
+async function fetchPostComments(postId: string): Promise<{ comments: CommentNode[]; dbFetchTimeMs: number }> {
+  const dbStart = performance.now();
   const comments = await prisma.comment.findMany({
     where: { postId, deletedAt: null },
     include: {
@@ -93,8 +42,67 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     },
     orderBy: { createdAt: "asc" },
   });
+  const dbFetchTimeMs = performance.now() - dbStart;
+  return { comments, dbFetchTimeMs };
+}
 
-  return NextResponse.json(flattenCommentTree(comments));
+function buildBenchmarkPayload(
+  comments: CommentNode[],
+  algo: CommentAlgo,
+  dbFetchTimeMs: number,
+) {
+  const algoStart = performance.now();
+  const data = runCommentAlgorithm(comments, algo);
+  const executionTimeMs = performance.now() - algoStart;
+
+  const payload: {
+    data: typeof data;
+    algorithm: CommentAlgo;
+    executionTimeMs: number;
+    dbFetchTimeMs: number;
+    totalCount: number;
+    depthDistribution?: DepthDistributionSummary;
+  } = {
+    data,
+    algorithm: algo,
+    executionTimeMs: Number(executionTimeMs.toFixed(2)),
+    dbFetchTimeMs: Number(dbFetchTimeMs.toFixed(2)),
+    totalCount: data.length,
+  };
+
+  if (algo === "optimized") {
+    payload.depthDistribution = buildDepthDistribution(data);
+  }
+
+  return payload;
+}
+
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id: postId } = await params;
+  const url = new URL(request.url);
+  const algoParam = parseCommentAlgo(url.searchParams.get("algo"));
+
+  const { comments, dbFetchTimeMs } = await fetchPostComments(postId);
+
+  if (algoParam) {
+    return NextResponse.json(buildBenchmarkPayload(comments, algoParam, dbFetchTimeMs));
+  }
+
+  const algoStart = performance.now();
+  const flattened = flattenCommentsOptimized(comments);
+  const executionTimeMs = performance.now() - algoStart;
+
+  if (url.searchParams.get("benchmark") === "1") {
+    return NextResponse.json({
+      data: flattened,
+      algorithm: "optimized" as const,
+      executionTimeMs: Number(executionTimeMs.toFixed(2)),
+      dbFetchTimeMs: Number(dbFetchTimeMs.toFixed(2)),
+      totalCount: flattened.length,
+    });
+  }
+
+  return NextResponse.json(flattened);
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -222,12 +230,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
 
     const mentionPayloads = Array.from(uniqueMentions.values()).map((mentioned) => ({
-        postId,
-        commentId: comment.id,
+      postId,
+      commentId: comment.id,
       actorId: actor.id,
-        targetUserId: mentioned.id,
-        preview: comment.content.slice(0, 140),
-      }));
+      targetUserId: mentioned.id,
+      preview: comment.content.slice(0, 140),
+    }));
 
     if (mentionPayloads.length > 0) {
       const saved = await dispatchMentionNotifications(mentionPayloads);
