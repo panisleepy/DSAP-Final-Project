@@ -5,7 +5,7 @@
 | 項目 | 說明 |
 |------|------|
 | **線上 Demo** | https://murmurland.vercel.app |
-| **Demo 影片** | https://www.youtube.com/watch?v=PwJ97Ofu4Uc |
+| **Demo 影片** | https://youtu.be/pn7jp-Vxd3U |
 | **Benchmark 測試頁（本機）** | http://localhost:3000/admin/benchmark |
 
 ---
